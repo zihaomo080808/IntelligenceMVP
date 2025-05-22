@@ -5,9 +5,6 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 def get_supabase_client() -> Client:
-    """
-    Create and return a Supabase client using configuration from settings
-    """
     try:
         supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
         return supabase

@@ -8,7 +8,7 @@ from redis import Redis
 from config import settings
 from database.supabase import get_supabase_client
 from profiles.profiles import get_profile_by_phone, get_user_profile, get_user_state, create_user_state, update_user_state, delete_user_state
-from onboarding.onboarding_messages import process_onboarding_message, extract_name_from_greeting
+from onboarding.onboarding_messages import process_onboarding_message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,6 +31,10 @@ redis_client = Redis(
 # Export redis_client to settings for use in message_processor.py
 settings.redis_client = redis_client
 
+# Set up separate onboarding queue name
+MESSAGING_QUEUE_NAME = 'twilio_messages'
+ONBOARDING_QUEUE_NAME = 'onboarding_queue'
+
 @twilio_bp.route("/webhook/sms", methods=['POST'])
 def receive_sms():
     try:
@@ -49,7 +53,7 @@ def receive_sms():
             'message': incoming_msg,
             'timestamp': str(asyncio.get_event_loop().time())
         }
-        redis_client.lpush('twilio_messages', json.dumps(message_data))
+        redis_client.lpush(MESSAGING_QUEUE_NAME, json.dumps(message_data))
         return str(resp)
     except Exception as e:
         logger.error(f"Error processing incoming SMS: {str(e)}")
@@ -62,8 +66,14 @@ async def process_message(phone_number: str, message: str) -> str:
         # Check if user has a profile in Supabase
         user_profile = await get_profile_by_phone(phone_number)
         if not user_profile:
-            return await handle_onboarding(phone_number, message)
-        
+            # Enqueue onboarding message instead of processing inline
+            onboarding_message = {
+                'phone_number': phone_number,
+                'message': message,
+                'timestamp': str(asyncio.get_event_loop().time())
+            }
+            redis_client.lpush(ONBOARDING_QUEUE_NAME, json.dumps(onboarding_message))
+            return "Welcome! To get started, I'd like to know your name. What should I call you?"
         logger.info(f"Found profile for {phone_number}, handling as regular conversation")
         # For now, just acknowledge the message - you'd replace this with your conversation agent
         return f"Hello {user_profile.username}! Thank you for your message. How can I help you today?"
@@ -93,12 +103,10 @@ async def handle_onboarding(phone_number: str, message: str) -> str:
             user_state.step,
             phone_number,
             user_state.profile,
-            user_state.accumulated_messages
         )
         
         state_data = {
             'profile': updated_profile,
-            'accumulated_messages': user_state.accumulated_messages + [message]
         }
         
         if is_complete:

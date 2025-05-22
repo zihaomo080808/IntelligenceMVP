@@ -149,3 +149,16 @@ async def delete_user_state(phone_number: str) -> bool:
     except Exception as e:
         logger.error(f"Error deleting user state: {str(e)}")
         return False
+
+
+async def get_embedding(text: str) -> List[float]:
+    """Get embedding for text using OpenAI"""
+    try:
+        response = await client.embeddings.create(
+            model=settings.EMBEDDING_MODEL or "text-embedding-ada-002",
+            input=text
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        logger.error(f"Error getting embedding: {str(e)}")
+        return None

@@ -2,7 +2,6 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 import uuid
-import numpy as np
 import json
 
 class UserProfile(BaseModel):
@@ -68,3 +67,53 @@ class UserState(BaseModel):
         if isinstance(data.get('accumulated_messages'), str):
             data['accumulated_messages'] = json.loads(data['accumulated_messages'])
         return cls(**data)
+
+class UserConversation(BaseModel):
+    id: Optional[uuid.UUID] = None
+    user_id: str
+    item_id: Optional[str] = None
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    messages: List[Dict[str, Any]] = Field(default_factory=list)
+
+class UserFeedback(BaseModel):
+    id: Optional[uuid.UUID] = None
+    user_id: str
+    item_id: str
+    feedback_type: str
+    confidence: Optional[float] = None
+    timestamp: Optional[datetime] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class UserRecommendation(BaseModel):
+    user_id: str
+    item_id: str
+    recommended_score: Optional[float] = None
+    status: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+class Opportunity(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = None
+    type: Optional[str] = None
+    cost: Optional[float] = None
+    deadline: Optional[datetime] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    embedding: Optional[List[float]] = Field(
+        default=None,
+        description="Vector embedding for similarity search",
+        min_items=1536,
+        max_items=1536
+    )
+    location: Optional[Dict[str, Any]] = None  # You can define a more specific type if needed
+
+class SpatialRefSys(BaseModel):
+    srid: int
+    auth_name: Optional[str] = None
+    auth_srid: Optional[int] = None
+    srtext: Optional[str] = None
+    proj4text: Optional[str] = None
