@@ -1,6 +1,6 @@
 import os
 from supabase import create_client, Client
-from config import settings  # Make sure your config.py is imported
+from config import settings 
 
 # Initialize Supabase client
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)

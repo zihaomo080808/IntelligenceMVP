@@ -117,3 +117,11 @@ class SpatialRefSys(BaseModel):
     auth_srid: Optional[int] = None
     srtext: Optional[str] = None
     proj4text: Optional[str] = None
+
+class ConversationArchive(BaseModel):
+    id: Optional[uuid.UUID] = None
+    user_id: str
+    item_id: Optional[str] = None
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    messages: List[Dict[str, Any]] = Field(default_factory=list)

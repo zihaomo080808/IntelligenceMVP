@@ -24,24 +24,21 @@ class Settings(BaseSettings):
     VECTOR_DIM: int
     VECTOR_INDEX_PATH: str
     DATABASE_URL: str
+    PERPLEXITY_API_KEY: str = ""
 
-    # Perplexity API settings
-    PERPLEXITY_API_KEY: str = os.getenv("PERPLEXITY_API_KEY", "")
-
-    # Twilio settings
-    TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
-    TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", "")
-    TWILIO_PHONE_NUMBER: str = os.getenv("TWILIO_PHONE_NUMBER", "")
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_PHONE_NUMBER: str = ""
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
 
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
-    SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
 
-    # Redis settings
-    REDIS_HOST: str = os.getenv('REDIS_HOST')
+    REDIS_HOST: str = ""
     REDIS_PORT: int = int(os.getenv('REDIS_PORT'))
-    REDIS_PASSWORD: str = os.getenv('REDIS_PASSWORD')
+    REDIS_PASSWORD: str = ""
     REDIS_SSL: bool = os.getenv('REDIS_SSL', 'True').lower() == 'true'
+    MAX_HISTORY: int = 50
 
     class Config:
         env_file = ".env"
