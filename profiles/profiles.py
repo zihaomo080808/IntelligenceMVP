@@ -1,5 +1,6 @@
 import logging
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List
+from config import settings
 from database.supabase import get_supabase_client
 from database.models import UserProfile, UserState
 from datetime import datetime, timezone

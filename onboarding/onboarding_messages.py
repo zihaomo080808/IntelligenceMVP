@@ -14,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def process_onboarding_message(
-    message: str,
+    message,  # Accept list or string
     step: int,
     phone_number: str,
     current_profile: Dict[str, Any] = None,
@@ -32,8 +32,14 @@ async def process_onboarding_message(
         if not isinstance(db_messages, list):
             db_messages = []
             
+        # If message is a list, join with '\n'
+        if isinstance(message, list):
+            message_to_store = '\n'.join(message)
+        else:
+            message_to_store = message
+        
         # Add current message to accumulated messages
-        db_messages.append(message)
+        db_messages.append(message_to_store)
         
         # Update the accumulated messages in the database
         supabase.table('user_states').update({

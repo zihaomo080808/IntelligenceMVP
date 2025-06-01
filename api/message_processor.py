@@ -34,10 +34,16 @@ def process_queued_messages(queue_name='twilio_messages'):
                     )
                     logger.info(f"Sent message to {data['phone_number']}")
                 else:
+                    # Handle batched messages
+                    msg = data['message']
+                    if isinstance(msg, list):
+                        msg_to_process = '\n'.join(msg)
+                    else:
+                        msg_to_process = msg
                     loop = asyncio.new_event_loop()
-                    response = loop.run_until_complete(process_message(data['phone_number'], data['message']))
+                    response = loop.run_until_complete(process_message(data['phone_number'], msg_to_process))
                     loop.close()
-                    store_message(data['phone_number'], 'user', data['message'])
+                    store_message(data['phone_number'], 'user', msg_to_process)
                     # Send the response back to the user
                     client.messages.create(
                         body=response,
@@ -55,8 +61,13 @@ def process_onboarding_queue(queue_name='onboarding_queue'):
             message_data = redis_client.rpop(queue_name)
             if message_data:
                 data = json.loads(message_data)
+                msg = data['message']
+                if isinstance(msg, list):
+                    msg_to_process = '\n'.join(msg)
+                else:
+                    msg_to_process = msg
                 loop = asyncio.new_event_loop()
-                response = loop.run_until_complete(handle_onboarding(data['phone_number'], data['message']))
+                response = loop.run_until_complete(handle_onboarding(data['phone_number'], msg_to_process))
                 loop.close()
                 client.messages.create(
                     body=response,
@@ -82,42 +93,43 @@ def store_message(user_id, sender, content):
     supabase = get_supabase_client()
     now = datetime.now(timezone.utc)
     response = supabase.table('user_conversations').select('*').eq('user_id', user_id).order('started_at', desc=True).limit(1).execute()
-    if response.data:
-        convo = UserConversation(**response.data[0])
-        convo.messages.append({
-            "sender": sender,
-            "content": content,
-            "timestamp": now.isoformat() + "Z"
-        })
-        convo.ended_at = now
-
-        # If messages exceed MAX_HISTORY, archive the oldest
-        if len(convo.messages) > MAX_HISTORY:
-            # Split messages: keep last MAX_HISTORY, archive the rest
-            to_archive = convo.messages[:-MAX_HISTORY]
-            convo.messages = convo.messages[-MAX_HISTORY:]
-
-            # Insert into conversation_archives
-            archive = ConversationArchive(
-                user_id=convo.user_id,
-                item_id=convo.item_id,
-                started_at=convo.started_at,
-                ended_at=now,
-                messages=to_archive
+    def store_one(msg):
+        if response.data:
+            convo = UserConversation(**response.data[0])
+            convo.messages.append({
+                "sender": sender,
+                "content": msg,
+                "timestamp": now.isoformat() + "Z"
+            })
+            convo.ended_at = now
+            # If messages exceed MAX_HISTORY, archive the oldest
+            if len(convo.messages) > MAX_HISTORY:
+                to_archive = convo.messages[:-MAX_HISTORY]
+                convo.messages = convo.messages[-MAX_HISTORY:]
+                archive = ConversationArchive(
+                    user_id=convo.user_id,
+                    item_id=convo.item_id,
+                    started_at=convo.started_at,
+                    ended_at=now,
+                    messages=to_archive
+                )
+                supabase.table('conversation_archives').insert(archive.dict()).execute()
+            supabase.table('user_conversations').update(convo.dict()).eq('id', str(convo.id)).execute()
+        else:
+            messages = [{
+                "sender": sender,
+                "content": msg,
+                "timestamp": now.isoformat() + "Z"
+            }]
+            new_convo = UserConversation(
+                user_id=user_id,
+                messages=messages,
+                started_at=now,
+                ended_at=now
             )
-            supabase.table('conversation_archives').insert(archive.dict()).execute()
-
-        supabase.table('user_conversations').update(convo.dict()).eq('id', str(convo.id)).execute()
+            supabase.table('user_conversations').insert(new_convo.dict()).execute()
+    if isinstance(content, list):
+        for msg in content:
+            store_one(msg)
     else:
-        messages = [{
-            "sender": sender,
-            "content": content,
-            "timestamp": now.isoformat() + "Z"
-        }]
-        new_convo = UserConversation(
-            user_id=user_id,
-            messages=messages,
-            started_at=now,
-            ended_at=now
-        )
-        supabase.table('user_conversations').insert(new_convo.dict()).execute()
+        store_one(content)
