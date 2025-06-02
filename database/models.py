@@ -125,3 +125,8 @@ class ConversationArchive(BaseModel):
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
     messages: List[Dict[str, Any]] = Field(default_factory=list)
+
+class RecentRecommendation(BaseModel):
+    user_id: str
+    recommendations: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
+    created_at: Optional[datetime] = None

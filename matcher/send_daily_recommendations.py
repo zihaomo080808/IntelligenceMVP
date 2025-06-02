@@ -23,7 +23,22 @@ def get_all_user_profiles(batch_size=1000):
         offset += batch_size
     return all_profiles
 
+def clear_recent_recommendations():
+    supabase = get_supabase_client()
+    response = supabase.table('recent_recommendations').select('user_id, recommendations').execute()
+    if response.data:
+        for row in response.data:
+            user_id = row['user_id']
+            recs = row.get('recommendations', [])
+            if recs:
+                # Clear recommendations for this user
+                supabase.table('recent_recommendations').update({
+                    'recommendations': []
+                }).eq('user_id', user_id).execute()
+                logger.info(f"Cleared recent recommendations for {user_id}")
+
 async def main():
+    clear_recent_recommendations()
     now_utc = datetime.now(timezone.utc).replace(tzinfo=pytz.utc)
     user_profiles = get_all_user_profiles()
     for profile in user_profiles:

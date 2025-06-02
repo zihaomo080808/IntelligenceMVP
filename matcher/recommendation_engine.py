@@ -1,7 +1,12 @@
 from matcher.supabase_matcher import match_opportunities
 from database.supabase import get_supabase_client
-from agents.conversation_agent import converse_with_user
+from profiles.profiles import get_embedding
+import openai
 from datetime import datetime, timezone
+from agents.system_prompts import ANTICIPATORY_DAILY_PROMPT
+import json
+from matcher.tags import TAGS
+from config import settings
 
 # Helper to get user embedding (implement as needed)
 def get_user_embedding(user_id):
@@ -23,16 +28,65 @@ def record_recommendation(user_id, item_id, score):
     }).execute()
 
 # Main orchestration function
-async def recommend_to_user(user_id, filters=None):
-    embedding = get_user_embedding(user_id)
-    if not embedding:
-        return "Sorry, we couldn't find your profile embedding line 29 recommendation_engine.py"
+async def recommend_to_user(user_id, filters=None, top_k=5):
+    supabase = get_supabase_client()
+    # 1. Fetch recent user conversation (last 10 messages)
+    convo_response = supabase.table('user_conversations').select('messages').eq('user_id', user_id).order('started_at', desc=True).limit(1).execute()
+    recent_messages = []
+    if convo_response.data and convo_response.data[0].get('messages'):
+        recent_messages = convo_response.data[0]['messages']
 
-    recs = match_opportunities(user_id, embedding, **(filters or {}))
+    # 2. Call OpenAI with anticipatory prompt
+    prompt = ANTICIPATORY_DAILY_PROMPT
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": "\n".join(recent_messages)}
+    ]
+    client = openai.AsyncOpenAI(api_key=getattr(settings, 'OPENAI_API_KEY', None))
+    gpt_response = await client.chat.completions.create(
+        model="o4-mini",
+        messages=messages,
+    )
+    anticipation_json = gpt_response.choices[0].message.content.strip()
+    tag = None
+    anticipation_data = None
+    try:
+        anticipation_data = json.loads(anticipation_json)
+        tag = anticipation_data.get('tag')
+        if tag not in TAGS:
+            tag = None
+    except Exception:
+        anticipation_data = {"description": anticipation_json}
+    # 3. Generate embedding for GPT output (use description if available)
+    embedding_input = anticipation_data.get('description') if anticipation_data and 'description' in anticipation_data else anticipation_json
+    embedding = await get_embedding(embedding_input)
+    if not embedding:
+        return anticipation_data, []
+    # 4. Call Supabase RPC to match opportunities, filtering by tag if available
+    recs = match_opportunities(user_id, embedding, top_k=top_k, tag=tag, **(filters or {}))
     if not recs:
-        return "Sorry, no new opportunities found for you right now line 33 recommendation_engine.py."
-    # 2. Record recommendations
+        return anticipation_data, []
+    # 5. Record top recommendation
     top_rec = recs[0]
     record_recommendation(user_id, top_rec['id'], top_rec.get('distance', 0))
-    # 4. Optionally, personalize with conversation agent
-    return recs
+
+    # 6. Store the rest of the recs (except the first) in recent_recommendations table (up to last 4)
+    if len(recs) > 1:
+        supabase = get_supabase_client()
+        # Get existing recent recommendations
+        response = supabase.table('recent_recommendations').select('recommendations').eq('user_id', user_id).single().execute()
+        existing = response.data['recommendations'] if response and response.data and response.data.get('recommendations') else []
+        # Append new recs (excluding the first/top rec)
+        new_recs = recs[1:]
+        combined = existing + new_recs
+        # Keep only the last 4
+        combined = combined[-4:]
+        # Upsert (insert or update)
+        supabase.table('recent_recommendations').upsert({
+            'user_id': user_id,
+            'recommendations': combined,
+            'created_at': datetime.now(timezone.utc)
+        }).execute()
+
+    return anticipation_data, recs
+

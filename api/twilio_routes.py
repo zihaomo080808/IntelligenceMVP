@@ -39,7 +39,7 @@ MESSAGING_QUEUE_NAME = 'twilio_messages'
 ONBOARDING_QUEUE_NAME = 'onboarding_queue'
 
 # Session window (in seconds)
-SESSION_WINDOW = 5
+SESSION_WINDOW = 3
 # In-memory store for batching messages per user
 user_message_batches = {}
 user_timers = {}

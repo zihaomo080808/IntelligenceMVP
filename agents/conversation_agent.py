@@ -55,8 +55,9 @@ async def converse_with_user(user_id: str, message) -> str:
     # Get last recommendation (most recent by created_at)
     last_rec_response = supabase.table('user_recommendations').select('*').eq('user_id', user_id).order('created_at', desc=True).limit(1).execute()
     
-    # Get current recommendations
-    recs = await recommend_to_user(user_id)
+    # Instead, fetch from recent_recommendations table
+    recs_response = supabase.table('recent_recommendations').select('recommendations').eq('user_id', user_id).single().execute()
+    recs = recs_response.data['recommendations'] if recs_response and recs_response.data and recs_response.data.get('recommendations') else []
     if not recs or not isinstance(recs, list) or len(recs) == 0:
         logger.info(f"No recommendations found for user {user_id}")
         return "Hey! I'm having trouble finding opportunities that match your interests right now. Want to chat about something else?"
@@ -91,7 +92,8 @@ async def converse_with_user(user_id: str, message) -> str:
             "title": rec.get('title'),
             "description": rec.get('description'),
             "details": rec.get('details', {}),
-            "score": rec.get('distance', 0)
+            "score": rec.get('distance', 0),
+            "tags": rec.get('tags', [])
         })
 
     context = {
