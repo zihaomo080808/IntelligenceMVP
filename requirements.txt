@@ -16,7 +16,7 @@ twilio==8.10.2
 pytest
 pytest-asyncio
 pydantic-settings==2.0.3
-httpx==0.25.1
+httpx>=0.24.0,<0.25.0
 flask==2.3.3
 flask-cors==4.0.0
 supabase==2.0.0
