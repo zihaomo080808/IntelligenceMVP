@@ -10,7 +10,8 @@ import json
 import requests
 from datetime import datetime, timezone
 import re
-from profiles.profiles import get_embedding, update_user_profile
+from profiles.profiles import update_user_profile
+from agents.callgpt import call_gpt, get_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -111,11 +112,7 @@ async def converse_with_user(user_id: str, message) -> str:
     messages.append({"role": "user", "content": message_to_process})
 
     # Call GPT
-    client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    response = await client.chat.completions.create(
-        model="o4-mini",
-        messages=messages,
-    )
+    response = await call_gpt(messages, model="o4-mini")
     
     gpt_response = response.choices[0].message.content.strip()
     user_message = gpt_response

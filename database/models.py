@@ -97,7 +97,6 @@ class Opportunity(BaseModel):
     title: str
     description: Optional[str] = None
     type: Optional[str] = None
-    cost: Optional[float] = None
     deadline: Optional[datetime] = None
     state: Optional[str] = None
     city: Optional[str] = None

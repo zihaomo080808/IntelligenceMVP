@@ -1,12 +1,12 @@
 from matcher.supabase_matcher import match_opportunities
 from database.supabase import get_supabase_client
-from profiles.profiles import get_embedding
 import openai
 from datetime import datetime, timezone
 from agents.system_prompts import ANTICIPATORY_DAILY_PROMPT
 import json
 from matcher.tags import TAGS
 from config import settings
+from agents.callgpt import call_gpt, get_embedding
 
 # Helper to get user embedding (implement as needed)
 def get_user_embedding(user_id):
@@ -42,11 +42,7 @@ async def recommend_to_user(user_id, filters=None, top_k=5):
         {"role": "system", "content": prompt},
         {"role": "user", "content": "\n".join(recent_messages)}
     ]
-    client = openai.AsyncOpenAI(api_key=getattr(settings, 'OPENAI_API_KEY', None))
-    gpt_response = await client.chat.completions.create(
-        model="o4-mini",
-        messages=messages,
-    )
+    gpt_response = await call_gpt(messages, model="o4-mini")
     anticipation_json = gpt_response.choices[0].message.content.strip()
     tag = None
     anticipation_data = None

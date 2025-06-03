@@ -4,7 +4,7 @@ from config import settings
 from database.supabase import get_supabase_client
 from profiles.profiles import get_user_profile, create_user_profile, update_user_profile
 from agents.perplexity_client import query_user_background
-from profiles.profiles import get_embedding
+from agents.callgpt import get_embedding
 
 # Configure logging
 logging.basicConfig(
