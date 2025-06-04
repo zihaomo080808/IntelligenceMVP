@@ -145,9 +145,9 @@ async def converse_with_user(user_id: str, message) -> str:
                 list(gpt_json.values())[2].upper() == 'RAG' and
                 isinstance(list(gpt_json.values())[1], list)
             ):
-                user_message = list(gpt_json.values())[0]
+                modified_user_message = list(gpt_json.values())[0]
                 tags = list(gpt_json.values())[1]
-                await secondary_recommend(user_id, user_message, tags)
+                user_message = await secondary_recommend(user_id, modified_user_message, tags)
             # 3. New RAG format: second dict has 'type': 'RAG' (no tag filtering)
             elif (
                 isinstance(gpt_json, dict) and
@@ -156,8 +156,8 @@ async def converse_with_user(user_id: str, message) -> str:
                 isinstance(list(gpt_json.values())[1], str) and
                 list(gpt_json.values())[1].upper() == 'RAG'
             ):
-                user_message = list(gpt_json.values())[0]
-                await secondary_recommend(user_id, user_message, None)
+                modified_user_message = list(gpt_json.values())[0]
+                user_message = await secondary_recommend(user_id, modified_user_message, None)
             # 4. Profile update: has 'type': 'UPDATE'
             elif gpt_json.get('type', '').upper() == 'UPDATE':
                 user_message = gpt_json.get('message', user_message)
@@ -178,8 +178,6 @@ async def converse_with_user(user_id: str, message) -> str:
                         await update_user_profile(user_id, merged_profile)
                     else:
                         await update_user_profile(user_id, profile_updates)
-
-                return user_message
         except Exception as e:
             logger.error(f"Failed to parse/update profile or RAG JSON: {e}")
 
