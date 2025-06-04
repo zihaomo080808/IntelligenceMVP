@@ -2,7 +2,7 @@ import openai
 from config import settings
 from database.supabase import get_supabase_client
 from agents.system_prompts import ALEX_HEFLE_PROMPT, RECOMMENDATION_PROMPT
-from matcher.recommendation_engine import recommend_to_user
+from matcher.recommendation_engine import recommend_to_user, record_recommendation, secondary_recommend
 from twilio.rest import Client
 import asyncio
 import logging
@@ -19,6 +19,17 @@ client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 twilio_number = settings.TWILIO_PHONE_NUMBER
 
 redis_client = settings.redis_client
+
+async def record_message(active_conversation, user_message, message_to_process):
+    supabase = get_supabase_client()
+    updated_messages = active_conversation.get('messages', [])
+    updated_messages.extend([
+        {"sender": "user", "content": message_to_process, "timestamp": datetime.now(timezone.utc)},
+        {"sender": "system", "content": user_message, "timestamp": datetime.now(timezone.utc)}
+    ])
+    supabase.table('user_conversations').update({
+        'messages': updated_messages
+    }).eq('id', active_conversation['id']).execute()
 
 async def converse_with_user(user_id: str, message) -> str:
     # If message is a list, join with '\n'
@@ -87,7 +98,7 @@ async def converse_with_user(user_id: str, message) -> str:
 
     # Format current recommendations
     current_recommendation = []
-    for rec in recs[:1]:  # Only include top 1
+    for rec in recs[:5]:  # Only include top 1
         current_recommendation.append({
             "id": rec['id'],
             "title": rec.get('title'),
@@ -115,18 +126,43 @@ async def converse_with_user(user_id: str, message) -> str:
     response = await call_gpt(messages, model="o4-mini")
     
     gpt_response = response.choices[0].message.content.strip()
-    user_message = gpt_response
-    # Check if GPT response is a JSON object (for profile update)
+    user_message = None
     json_match = re.match(r'\{[\s\S]*\}$', gpt_response)
     if json_match:
         try:
             gpt_json = json.loads(gpt_response)
-            if isinstance(gpt_json, dict) and 'message' in gpt_json:
+            # 1. Old opportunities format: has 'id' and 'message'
+            if isinstance(gpt_json, dict) and 'id' in gpt_json and 'message' in gpt_json:
                 user_message = gpt_json['message']
-                # Remove 'message' key and update the rest in the user profile
-                profile_updates = {k: v for k, v in gpt_json.items() if k != 'message'}
+                # Record the opportunity as given to the user
+                record_recommendation(user_id, gpt_json['id'], 1.0)
+            # 2. New RAG format: third dict has 'type': 'RAG' and second dict is tags (list)
+            elif (
+                isinstance(gpt_json, dict) and
+                isinstance(list(gpt_json.values()), list) and
+                len(list(gpt_json.values())) >= 3 and
+                isinstance(list(gpt_json.values())[2], str) and
+                list(gpt_json.values())[2].upper() == 'RAG' and
+                isinstance(list(gpt_json.values())[1], list)
+            ):
+                user_message = list(gpt_json.values())[0]
+                tags = list(gpt_json.values())[1]
+                await secondary_recommend(user_id, user_message, tags)
+            # 3. New RAG format: second dict has 'type': 'RAG' (no tag filtering)
+            elif (
+                isinstance(gpt_json, dict) and
+                isinstance(list(gpt_json.values()), list) and
+                len(list(gpt_json.values()) )>= 2 and
+                isinstance(list(gpt_json.values())[1], str) and
+                list(gpt_json.values())[1].upper() == 'RAG'
+            ):
+                user_message = list(gpt_json.values())[0]
+                await secondary_recommend(user_id, user_message, None)
+            # 4. Profile update: has 'type': 'UPDATE'
+            elif gpt_json.get('type', '').upper() == 'UPDATE':
+                user_message = gpt_json.get('message', user_message)
+                profile_updates = {k: v for k, v in gpt_json.items() if k not in ['message', 'type']}
                 if profile_updates:
-                    # If bio, username, or location is updated, get new embedding
                     embedding_fields = []
                     for field in ['bio', 'username', 'location']:
                         if field in profile_updates and profile_updates[field]:
@@ -136,37 +172,19 @@ async def converse_with_user(user_id: str, message) -> str:
                         embedding = await get_embedding(embedding_input)
                         if embedding:
                             profile_updates['embedding'] = embedding
-                    # Merge with existing profile and update
                     if user_profile:
                         merged_profile = user_profile.copy()
                         merged_profile.update(profile_updates)
                         await update_user_profile(user_id, merged_profile)
                     else:
                         await update_user_profile(user_id, profile_updates)
+
+                return user_message
         except Exception as e:
-            logger.error(f"Failed to parse/update profile from GPT JSON: {e}")
-    if gpt_response.endswith('-.') and current_recommendation:
-        first_rec = current_recommendation[0]
-        # Insert into user_recommendations
-        supabase.table('user_recommendations').insert({
-            'user_id': user_id,
-            'item_id': first_rec['id'],
-            'recommended_score': first_rec.get('score', 0),
-            'status': 'sent',
-            'created_at': datetime.now(timezone.utc)
-        }).execute()
+            logger.error(f"Failed to parse/update profile or RAG JSON: {e}")
+
     # Update conversation with new messages
-    updated_messages = active_conversation.get('messages', [])
-    updated_messages.extend([
-        {"sender": "user", "content": message_to_process, "timestamp": datetime.now(timezone.utc)},
-        {"sender": "system", "content": user_message, "timestamp": datetime.now(timezone.utc)}
-    ])
-    
-    # Update the conversation in Supabase
-    supabase.table('user_conversations').update({
-        'messages': updated_messages
-    }).eq('id', active_conversation['id']).execute()
-    
+    await record_message(active_conversation, user_message, message_to_process)
     return user_message
 
 async def send_daily_recommendation(user_id):
@@ -175,6 +193,8 @@ async def send_daily_recommendation(user_id):
         logger.info(f"No recommendations found for user {user_id}")
         return
     top_rec = recs[0]
+    # Record the top recommendation only here
+    record_recommendation(user_id, top_rec['id'], top_rec.get('score', 0))
     message = f"Hey! Based on your profile, here's something you might like: {top_rec['title']} - {top_rec['description']}"
     # Use the send_sms endpoint to queue the message
     payload = {
