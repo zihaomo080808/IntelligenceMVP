@@ -6,8 +6,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-gpt_throttler = Throttler(rate_limit=60, period=60)
-embedding_throttler = Throttler(rate_limit=60, period=60)
+gpt_throttler = Throttler(rate_limit=1000, period=60)
+embedding_throttler = Throttler(rate_limit=1000, period=60)
 
 async def call_gpt(messages, model="o4-mini", retries=3, **kwargs):
     for attempt in range(retries):

@@ -1,7 +1,6 @@
-import openai
 from config import settings
 from database.supabase import get_supabase_client
-from agents.system_prompts import ALEX_HEFLE_PROMPT, RECOMMENDATION_PROMPT
+from agents.system_prompts import ALEX_HEFLE_PROMPT, RECOMMENDATION_PROMPT, FINAL_RECOMMENDATION
 from matcher.recommendation_engine import recommend_to_user, record_recommendation, secondary_recommend
 from twilio.rest import Client
 import asyncio
@@ -31,26 +30,48 @@ async def record_message(active_conversation, user_message, message_to_process):
         'messages': updated_messages
     }).eq('id', active_conversation['id']).execute()
 
-async def converse_with_user(user_id: str, message) -> str:
-    # If message is a list, join with '\n'
+async def message_to_json(message) -> str:
     if isinstance(message, list):
         message_to_process = '\n'.join(message)
     else:
         message_to_process = message
-    # Get conversation history directly from user_conversations
+    return message_to_process
+
+async def final_send(conversation_history, last_recommendation, user_profile, recs2, message_to_process):
+    context = {
+        "conversation_history": conversation_history,
+        "last_recommendation": last_recommendation,
+        "user_profile": user_profile,
+        "new_recommendations": recs2
+    }
+    messages = [
+        {"role": "system", "content": FINAL_RECOMMENDATION},
+        {"role": "system", "content": f"Context for this conversation:\n{json.dumps(context, indent=2)}"},
+    ]
+    
+    messages.extend(conversation_history)
+    messages.append({"role": "user", "content": message_to_process})
+
+    # Call GPT
+    response = await call_gpt(messages, model="o4-mini")
+    return response
+
+async def converse_with_user(user_id: str, message) -> str:
+    if isinstance(message, list):
+        message_to_process = '\n'.join(message)
+    else:
+        message_to_process = message
+
     supabase = get_supabase_client()
     
-    # Fetch user profile
     user_profile_response = supabase.table('profiles').select('*').eq('user_id', user_id).single().execute()
     user_profile = user_profile_response.data if user_profile_response and user_profile_response.data else None
     if user_profile and 'embedding' in user_profile:
         user_profile = {k: v for k, v in user_profile.items() if k != 'embedding'}
     
-    # Get or create active conversation
     active_conv_response = supabase.table('user_conversations').select('*').eq('user_id', user_id).is_('ended_at', 'null').order('started_at', desc=True).limit(1).execute()
     
     if not active_conv_response.data:
-        # Create new conversation
         new_conv = {
             'user_id': user_id,
             'started_at': datetime.now(timezone.utc),
@@ -64,27 +85,22 @@ async def converse_with_user(user_id: str, message) -> str:
     active_conversation = active_conv_response.data[0]
     messages = active_conversation.get('messages', [])
     
-    # Get last recommendation (most recent by created_at)
     last_rec_response = supabase.table('user_recommendations').select('*').eq('user_id', user_id).order('created_at', desc=True).limit(1).execute()
     
-    # Instead, fetch from recent_recommendations table
     recs_response = supabase.table('recent_recommendations').select('recommendations').eq('user_id', user_id).single().execute()
     recs = recs_response.data['recommendations'] if recs_response and recs_response.data and recs_response.data.get('recommendations') else []
     if not recs or not isinstance(recs, list) or len(recs) == 0:
         logger.info(f"No recommendations found for user {user_id}")
         return "Hey! I'm having trouble finding opportunities that match your interests right now. Want to chat about something else?"
 
-    # Format conversation history from messages
     conversation_history = []
     for msg in messages:
         role = "assistant" if msg['sender'] == 'system' else "user"
         conversation_history.append({"role": role, "content": msg['content']})
 
-    # Format last recommendation
     last_recommendation = None
     if last_rec_response.data and last_rec_response.data[0]:
         last_rec = last_rec_response.data[0]
-        # Get the full opportunity details
         opp_response = supabase.table('opportunities').select('*').eq('id', last_rec['item_id']).single().execute()
         if opp_response.data:
             last_recommendation = {
@@ -131,12 +147,9 @@ async def converse_with_user(user_id: str, message) -> str:
     if json_match:
         try:
             gpt_json = json.loads(gpt_response)
-            # 1. Old opportunities format: has 'id' and 'message'
             if isinstance(gpt_json, dict) and 'id' in gpt_json and 'message' in gpt_json:
                 user_message = gpt_json['message']
-                # Record the opportunity as given to the user
                 record_recommendation(user_id, gpt_json['id'], 1.0)
-            # 2. New RAG format: third dict has 'type': 'RAG' and second dict is tags (list)
             elif (
                 isinstance(gpt_json, dict) and
                 isinstance(list(gpt_json.values()), list) and
@@ -147,8 +160,9 @@ async def converse_with_user(user_id: str, message) -> str:
             ):
                 modified_user_message = list(gpt_json.values())[0]
                 tags = list(gpt_json.values())[1]
-                user_message = await secondary_recommend(user_id, modified_user_message, tags)
-            # 3. New RAG format: second dict has 'type': 'RAG' (no tag filtering)
+                recs2 = await secondary_recommend(user_id, modified_user_message, tags)
+                user_message = final_send(conversation_history, last_recommendation, user_profile, recs2, message_to_process)
+            # New RAG format: second dict has 'type': 'RAG' (no tag filtering)
             elif (
                 isinstance(gpt_json, dict) and
                 isinstance(list(gpt_json.values()), list) and
@@ -157,8 +171,9 @@ async def converse_with_user(user_id: str, message) -> str:
                 list(gpt_json.values())[1].upper() == 'RAG'
             ):
                 modified_user_message = list(gpt_json.values())[0]
-                user_message = await secondary_recommend(user_id, modified_user_message, None)
-            # 4. Profile update: has 'type': 'UPDATE'
+                recs2 = await secondary_recommend(user_id, modified_user_message, None)
+                user_message = final_send(conversation_history, last_recommendation, user_profile, recs2, message_to_process)
+
             elif gpt_json.get('type', '').upper() == 'UPDATE':
                 user_message = gpt_json.get('message', user_message)
                 profile_updates = {k: v for k, v in gpt_json.items() if k not in ['message', 'type']}

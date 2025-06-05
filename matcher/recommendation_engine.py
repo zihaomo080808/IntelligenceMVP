@@ -73,7 +73,6 @@ async def recommend_to_user(user_id, filters=None, top_k=5):
         combined = existing + new_recs
         # Keep only the last 4
         combined = combined[-4:]
-        # Upsert (insert or update)
         supabase.table('recent_recommendations').upsert({
             'user_id': user_id,
             'recommendations': combined,
@@ -84,26 +83,21 @@ async def recommend_to_user(user_id, filters=None, top_k=5):
 
 async def secondary_recommend(user_id, message, tags, filters=None, top_k=5):
     supabase = get_supabase_client()
-    # 1. Fetch recent user conversation (last 10 messages)
     embedding = await get_embedding(message)
     if not embedding:
         return None, []
-    # 4. Call Supabase RPC to match opportunities, filtering by tag if available
     recs = match_opportunities(user_id, embedding, top_k=top_k, tag=tags, **(filters or {}))
     if not recs:
         return None, []
-    # 6. Store the rest of the recs (except the first) in recent_recommendations table (up to last 4)
     if len(recs) > 1:
         supabase = get_supabase_client()
-        # Get existing recent recommendations
         response = supabase.table('recent_recommendations').select('recommendations').eq('user_id', user_id).single().execute()
         existing = response.data['recommendations'] if response and response.data and response.data.get('recommendations') else []
-        # Append new recs (excluding the first/top rec)
+        # Append new recs 
         new_recs = recs[1:]
         combined = existing + new_recs
-        # Keep only the last 4
+
         combined = combined[-4:]
-        # Upsert (insert or update)
         supabase.table('recent_recommendations').upsert({
             'user_id': user_id,
             'recommendations': combined,
