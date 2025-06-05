@@ -150,3 +150,10 @@ async def delete_user_state(phone_number: str) -> bool:
     except Exception as e:
         logger.error(f"Error deleting user state: {str(e)}")
         return False
+
+async def get_profile_by_phone(phone_number: str) -> Optional[UserProfile]:
+    """
+    Get a user profile by phone number.
+    This is an alias for get_user_profile for backward compatibility.
+    """
+    return await get_user_profile(phone_number)
