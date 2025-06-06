@@ -25,7 +25,7 @@ def start_message_processor():
 
 if __name__ == '__main__':
     start_message_processor()
-    port = int(os.getenv('PORT', 5000))
+    port = int(os.getenv('PORT', 5002))
     
     # In production, use gunicorn instead of app.run()
     if os.getenv('ENVIRONMENT') == 'production':

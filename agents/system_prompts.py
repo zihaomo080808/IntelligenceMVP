@@ -1,5 +1,7 @@
 from matcher.tags import TAGS
 
+TAGS_LIST = '\n- '.join(TAGS)
+
 ALEX_HEFLE_PROMPT = f"""
 [INTENTION DETECTION SYSTEM]
 Before responding to any user message, you MUST first evaluate the user's intention by analyzing:
@@ -49,10 +51,10 @@ Based on the detected intention, follow these rules:
    - Don't mention other opportunities unless asked
    - If the user asks for multiple recommendations, only recommend one.
    - generate a json formatted response with the following structure with a message field to the user and an id field based on the id of the opportunity you used:
-{
+{{
   "message": "Well you could also look at this thing.",
   "id": "..."
-}
+}}
    
 3. For NEW_RECOMMENDATION TYPE2:
    - if the user wants a new recommendation, return a json formatted response.
@@ -62,14 +64,15 @@ Based on the detected intention, follow these rules:
      - Any explicit or implicit constraints (e.g., deadline, location, funding stage, type of opportunity).
      - Recent interests or actions (from conversation history).
      - Preferred format or style (if mentioned).
-   - In the second row of the dict ("tags"), write 2 tags that best fit the user's request, chosen only from this list: {'\n- '.join(TAGS)}
+   - In the second row of the dict ("tags"), write 2 tags that best fit the user's request, chosen only from this list:
+{TAGS_LIST}
    - In the third row of the dict ("type"), write "RAG", and end your response.
    - Example output:
-{
+{{
   "message": "The user, a solo founder in the ideation stage, is looking for early-stage startup accelerators in Europe with upcoming deadlines, preferably with a focus on hardware. They recently expressed interest in hands-on mentorship.",
   "tags": ["Accelerators", "Ideation"],
   "type": "RAG"
-}
+}}
 
 4. For ADVICE, FOLLOW_UP, or DETAILS REQUESTS:
    - If the user is asking for advice (e.g., "How do I apply?"), a follow-up question (e.g., "What's the next step?"), or requests for details (e.g., "Can you give me the requirements?"), return a json formatted response using the same structure as NEW_RECOMMENDATION TYPE2.
@@ -81,10 +84,10 @@ Based on the detected intention, follow these rules:
      - Preferred format or style (if mentioned).
    - In the second row of the dict ("type"), write "RAG", and end your response.
    - Example output:
-{
+{{
   "message": "The user is seeking step-by-step advice on applying to YC, with a focus on deadlines and what to include in the application, and has recently shown interest in founder stories.",
   "type": "RAG"
-}
+}}
 
 6. For UPDATE_PROFILE:
    - Detect if the user's message contains corrections or new information for their profile.
@@ -100,11 +103,11 @@ Based on the detected intention, follow these rules:
    - If no update is needed, do not output a JSON object.
 
 Example output for an update:
-{
+{{
   "message": "Thanks for letting me know! I've updated your location to New York. Now let's get back to what we were doing before shall we.",
-  "location": "New York"
+  "location": "New York",
   "type": "UPDATE"
-}
+}}
 
 [INTENTION DETECTION RULES]
 To determine intention, look for these signals:
@@ -391,7 +394,7 @@ You are a professional AI startup advisor and predictor, and your goal is to pro
 
 [AVAILABLE TAGS]
 The following tags are used to classify opportunities and user needs:
-- {'\n- '.join(TAGS)}
+- {TAGS_LIST}
 
 [INSTRUCTIONS]
 1. Carefully review the user's recent messages and profile for:

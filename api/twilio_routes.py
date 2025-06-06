@@ -10,6 +10,7 @@ from database.supabase import get_supabase_client
 from profiles.profiles import get_profile_by_phone, get_user_profile, get_user_state, create_user_state, update_user_state, delete_user_state
 from onboarding.onboarding_messages import process_onboarding_message
 from agents.conversation_agent import converse_with_user
+from database.redis_client import get_redis_client
 import threading
 import time
 
@@ -22,17 +23,8 @@ twilio_bp = Blueprint('twilio', __name__)
 client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 twilio_number = settings.TWILIO_PHONE_NUMBER
 
-# Initialize Redis connection
-redis_client = Redis(
-    host=settings.REDIS_HOST,
-    port=settings.REDIS_PORT,
-    password=settings.REDIS_PASSWORD,
-    ssl=settings.REDIS_SSL,
-    decode_responses=True  # This ensures we get strings back instead of bytes
-)
-
-# Export redis_client to settings for use in message_processor.py
-settings.redis_client = redis_client
+# Get Redis client
+redis_client = get_redis_client()
 
 # Set up separate onboarding queue name
 MESSAGING_QUEUE_NAME = 'twilio_messages'

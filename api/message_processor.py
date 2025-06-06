@@ -2,12 +2,14 @@ import asyncio
 import logging
 from twilio.rest import Client
 from config import settings
-from twilio_routes import process_message, handle_onboarding
+from api.twilio_routes import process_message, handle_onboarding
 from database.models import UserConversation, ConversationArchive
 from database.supabase import get_supabase_client
+from database.redis_client import get_redis_client
 from datetime import datetime, timezone
 import json
 import sys
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +18,8 @@ logger = logging.getLogger(__name__)
 client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 twilio_number = settings.TWILIO_PHONE_NUMBER
 
-redis_client = settings.redis_client
+# Get Redis client
+redis_client = get_redis_client()
 
 def process_queued_messages(queue_name='twilio_messages'):
     while True:

@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 twilio_number = settings.TWILIO_PHONE_NUMBER
 
-redis_client = settings.redis_client
-
 async def record_message(active_conversation, user_message, message_to_process):
     supabase = get_supabase_client()
     updated_messages = active_conversation.get('messages', [])
